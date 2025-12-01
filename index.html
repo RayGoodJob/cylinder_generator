@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural 3D Shape Generator</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            color: #ddd;
+        }
+        input[type="range"], input[type="number"], select {
+            width: 100%;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: #333;
+            color: white;
+            box-sizing: border-box;
+        }
+        input[type="range"] {
+            padding: 0;
+        }
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        #btn-regen {
+            background-color: #4CAF50;
+            color: white;
+        }
+        #btn-regen:hover {
+            background-color: #45a049;
+        }
+        #btn-screenshot {
+            background-color: #2196F3;
+            color: white;
+        }
+        #btn-screenshot:hover {
+            background-color: #1e88e5;
+        }
+        .value-display {
+            float: right;
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+    </style>
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="ui">
+        <h2>Shape Parameters</h2>
+        
+        <div class="control-group">
+            <label>Length <span id="val-length" class="value-display">10</span></label>
+            <input type="number" id="input-length" value="10" min="1" max="50">
+        </div>
+
+        <div class="control-group">
+            <label>Vertical Bend <span id="val-v-angle" class="value-display">Flat</span></label>
+            <input type="range" id="input-v-angle" min="-10" max="10" value="0" step="1">
+            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #888; margin-top: 2px;">
+                <span>Down</span><span>Flat</span><span>Up</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Horizontal Bend <span id="val-h-angle" class="value-display">Flat</span></label>
+            <input type="range" id="input-h-angle" min="-10" max="10" value="0" step="1">
+            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #888; margin-top: 2px;">
+                <span>Left</span><span>Flat</span><span>Right</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Detail Level</label>
+            <select id="input-detail">
+                <option value="fine">Fine (High Poly)</option>
+                <option value="medium" selected>Medium</option>
+                <option value="coarse">Coarse (Low Poly)</option>
+            </select>
+        </div>
+
+        <div class="buttons">
+            <button id="btn-regen">Regenerate</button>
+        </div>
+        <div class="buttons">
+            <button id="btn-screenshot">Screenshot</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        let mesh;
+
+        // UI Elements
+        const inputLength = document.getElementById('input-length');
+        const inputVAngle = document.getElementById('input-v-angle');
+        const inputHAngle = document.getElementById('input-h-angle');
+        const inputDetail = document.getElementById('input-detail');
+        const btnRegen = document.getElementById('btn-regen');
+        const btnScreenshot = document.getElementById('btn-screenshot');
+
+        // Value Displays
+        const valLength = document.getElementById('val-length');
+        const valVAngle = document.getElementById('val-v-angle');
+        const valHAngle = document.getElementById('val-h-angle');
+
+        function init() {
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(20, 20, 20);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 2); // Soft white light
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
+            
+            const backLight = new THREE.DirectionalLight(0x4444ff, 1);
+            backLight.position.set(-10, -10, -10);
+            scene.add(backLight);
+
+            // Grid
+            const gridHelper = new THREE.GridHelper(50, 50, 0x444444, 0x333333);
+            scene.add(gridHelper);
+
+            // Initial Generation
+            generateMesh();
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            btnRegen.addEventListener('click', generateMesh);
+            btnScreenshot.addEventListener('click', takeScreenshot);
+            
+            // Live updates for labels
+            inputLength.addEventListener('input', () => valLength.textContent = inputLength.value);
+            inputVAngle.addEventListener('input', () => updateLabel(inputVAngle, valVAngle, ['Down', 'Flat', 'Up']));
+            inputHAngle.addEventListener('input', () => updateLabel(inputHAngle, valHAngle, ['Left', 'Flat', 'Right']));
+
+            animate();
+        }
+
+        function updateLabel(input, display, labels) {
+            const val = parseInt(input.value);
+            if (val === 0) display.textContent = labels[1];
+            else if (val < 0) display.textContent = `${labels[0]} ${Math.abs(val)}`;
+            else display.textContent = `${labels[2]} ${val}`;
+        }
+
+        function generateMesh() {
+            if (mesh) {
+                scene.remove(mesh);
+                mesh.geometry.dispose();
+                mesh.material.dispose();
+            }
+
+            // Parameters
+            const length = parseFloat(inputLength.value) || 10;
+            const vBend = parseInt(inputVAngle.value); // -10 to 10
+            const hBend = parseInt(inputHAngle.value); // -10 to 10
+            const detail = inputDetail.value;
+
+            // Curve Generation
+            const points = [];
+            const segments = 20;
+            
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                
+                // Base growth along Y axis
+                let x = 0;
+                let y = t * length;
+                let z = 0;
+
+                // Apply Bend (Parabolic)
+                // Factor determines how much it deviates from center at the tip
+                const bendFactor = 0.5; 
+                
+                // Horizontal (X-axis)
+                x += (hBend * bendFactor) * (t * t);
+
+                // Vertical (Z-axis)
+                z += (vBend * bendFactor) * (t * t);
+
+                points.push(new THREE.Vector3(x, y, z));
+            }
+
+            const curve = new THREE.CatmullRomCurve3(points);
+
+            // Geometry Settings based on Detail
+            let tubularSegments, radialSegments;
+            if (detail === 'fine') {
+                tubularSegments = 128;
+                radialSegments = 32;
+            } else if (detail === 'medium') {
+                tubularSegments = 64;
+                radialSegments = 16;
+            } else { // coarse
+                tubularSegments = 32;
+                radialSegments = 8;
+            }
+
+            const radius = 1.5; // Fixed thickness
+            const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false);
+
+            // Material
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x3498db,
+                shininess: 60,
+                specular: 0x111111,
+                flatShading: detail === 'coarse'
+            });
+
+            mesh = new THREE.Mesh(geometry, material);
+            
+            // Center the mesh roughly
+            mesh.position.y = -length / 2;
+            
+            scene.add(mesh);
+        }
+
+        function takeScreenshot() {
+            renderer.render(scene, camera);
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = '3d-shape-' + Date.now() + '.png';
+            link.href = dataURL;
+            link.click();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>
